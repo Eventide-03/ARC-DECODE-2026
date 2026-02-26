@@ -12,11 +12,12 @@ public class Indexer extends StateMachine<Indexer.IndexerState> {
   public static final double FEED_POWER = 0.4;
   public static final double REVERSE_POWER = -0.5;
 
-  private final TalonFX motor;
+  private final TalonFX Indexer;
+  private double dutyPercent = FEED_POWER;
 
-  public Indexer(TalonFX motor) {
+  public Indexer(TalonFX Indexer) {
     super(SubsystemPriority.DEPLOY, IndexerState.OFF);
-    this.motor = motor;
+    this.Indexer = Indexer;
   }
 
   public void intake() { setStateFromRequest(IndexerState.INTAKE); }
@@ -24,16 +25,25 @@ public class Indexer extends StateMachine<Indexer.IndexerState> {
   public void reverse() { setStateFromRequest(IndexerState.REVERSE); }
   public void stop() { setStateFromRequest(IndexerState.OFF); }
 
+  /**
+   * Set an arbitrary duty cycle percent and enter FEED state.
+   * Percent is clamped to [-1.0, 1.0].
+   */
+  public void setDutyPercent(double percent) {
+    dutyPercent = Math.max(-1.0, Math.min(1.0, percent));
+    setStateFromRequest(IndexerState.FEED);
+  }
+
   @Override
   protected IndexerState getNextState(IndexerState current) { return current; }
 
   @Override
   protected void afterTransition(IndexerState newState) {
     switch (newState) {
-      case OFF -> motor.setControl(new DutyCycleOut(0.0));
-      case INTAKE -> motor.setControl(new DutyCycleOut(INTAKE_POWER));
-      case FEED -> motor.setControl(new DutyCycleOut(FEED_POWER));
-      case REVERSE -> motor.setControl(new DutyCycleOut(REVERSE_POWER));
+      case OFF -> Indexer.setControl(new DutyCycleOut(0.0));
+      case INTAKE -> Indexer.setControl(new DutyCycleOut(INTAKE_POWER));
+      case FEED -> Indexer.setControl(new DutyCycleOut(dutyPercent));
+      case REVERSE -> Indexer.setControl(new DutyCycleOut(REVERSE_POWER));
     }
   }
 }

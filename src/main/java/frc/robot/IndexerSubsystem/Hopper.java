@@ -13,11 +13,12 @@ public class Hopper extends StateMachine<Hopper.HopperState> {
   public static final double FEED_POWER = 0.4;
   public static final double REVERSE_POWER = -0.5;
 
-  private final TalonFX motor;
+  private final TalonFX Hopper;
+  private double dutyPercent = FEED_POWER;
 
-  public Hopper(TalonFX motor) {
+  public Hopper(TalonFX Hopper) {
     super(SubsystemPriority.DEPLOY, HopperState.OFF);
-    this.motor = motor;
+    this.Hopper = Hopper;
   }
 
   public void intake() { setStateFromRequest(HopperState.INTAKE); }
@@ -25,16 +26,25 @@ public class Hopper extends StateMachine<Hopper.HopperState> {
   public void reverse() { setStateFromRequest(HopperState.REVERSE); }
   public void stop() { setStateFromRequest(HopperState.OFF); }
 
+  /**
+   * Set an arbitrary duty cycle percent and enter FEED state.
+   * Percent is clamped to [-1.0, 1.0].
+   */
+  public void setDutyPercent(double percent) {
+    dutyPercent = Math.max(-1.0, Math.min(1.0, percent));
+    setStateFromRequest(HopperState.FEED);
+  }
+
   @Override
   protected HopperState getNextState(HopperState current) { return current; }
 
   @Override
   protected void afterTransition(HopperState newState) {
     switch (newState) {
-      case OFF -> motor.setControl(new DutyCycleOut(0.0));
-      case INTAKE -> motor.setControl(new DutyCycleOut(INTAKE_POWER));
-      case FEED -> motor.setControl(new DutyCycleOut(FEED_POWER));
-      case REVERSE -> motor.setControl(new DutyCycleOut(REVERSE_POWER));
+      case OFF -> Hopper.setControl(new DutyCycleOut(0.0));
+      case INTAKE -> Hopper.setControl(new DutyCycleOut(INTAKE_POWER));
+      case FEED -> Hopper.setControl(new DutyCycleOut(dutyPercent));
+      case REVERSE -> Hopper.setControl(new DutyCycleOut(REVERSE_POWER));
     }
   }
 }

@@ -77,6 +77,23 @@ public class DistanceCalc extends LifecycleSubsystem {
     return localization.getFieldRelativeSpeeds().omegaRadiansPerSecond;
   }
 
+// look ahead exposure
+  public edu.wpi.first.math.geometry.Pose2d getRobotPose() {
+    return localization.getPose();
+  }
+
+  public double getFieldVelocityX() {
+    return localization.getFieldRelativeSpeeds().vxMetersPerSecond;
+  }
+
+  public double getFieldVelocityY() {
+    return localization.getFieldRelativeSpeeds().vyMetersPerSecond;
+  }
+
+  public edu.wpi.first.math.geometry.Pose2d getTargetPose() {
+    return FmsSubsystem.isRedAlliance() ? headingLock.getRedTargetPose() : headingLock.getBlueTargetPose();
+  }
+
   @Override
   public void robotPeriodic() {
     super.robotPeriodic();

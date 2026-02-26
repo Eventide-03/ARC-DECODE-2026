@@ -1,6 +1,8 @@
 package frc.robot.FlywheelSubsystem;
 
 import edu.wpi.first.math.filter.Debouncer;
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.util.scheduling.SubsystemPriority;
 import frc.robot.util.state_machines.StateMachine;
@@ -22,6 +24,18 @@ public class LookupTable extends StateMachine<LookupTable.State> {
             this.hoodangle = hoodangle;
         }
     }
+
+
+    public double getCurrentTimeOfFlightSeconds() {
+            double rawDistance = distanceCalc.getDistanceToAllianceTargetMeters();
+        double tof = getTimeOfFlightSeconds(rawDistance);
+        SmartDashboard.putNumber("Shooter/CurrentTOF", tof);
+    return tof;
+}
+
+
+    
+    
 
     private static class TimeOfFlightPoint {
         final double distance;
@@ -99,6 +113,30 @@ public class LookupTable extends StateMachine<LookupTable.State> {
         return tofPoints.get(tofPoints.size() - 1).time;
     }
 
+    public double getTimeOfFlightSeconds(double distanceMeters) {
+        if (tofPoints.isEmpty()) return 0.0;
+
+        Pose2d robotPose = distanceCalc.getRobotPose();
+        Pose2d targetPose = distanceCalc.getTargetPose();
+        double vx = distanceCalc.getFieldVelocityX();
+        double vy = distanceCalc.getFieldVelocityY();
+
+        double tof = lookupTimeOfFlight(distanceMeters);
+        for (int i = 0; i < 20; i++) {
+            Translation2d lookahead = robotPose.getTranslation().plus(new Translation2d(vx * tof, vy * tof));
+            double effDist = targetPose.getTranslation().getDistance(lookahead);
+            double nextTof = lookupTimeOfFlight(effDist);
+            if (Math.abs(nextTof - tof) < 1e-4) {
+                tof = nextTof;
+                break;
+            }
+            tof = nextTof;
+        }
+
+        SmartDashboard.putNumber("Shooter/ComputedTOF", tof);
+        return tof;
+    }
+
     public double[] lookup(double distanceMeters) {
         if (points.isEmpty()) return new double[] {0.0, 0.0};
 
@@ -126,29 +164,28 @@ public class LookupTable extends StateMachine<LookupTable.State> {
 
 
     private double getVelocityCompensatedDistance(double rawDistance) {
-        double tof = lookupTimeOfFlight(rawDistance);
 
-        double forwardVel = distanceCalc.getRobotVelocityTowardTargetMetersPerSec();
-        double lateralVel = distanceCalc.getRobotLateralVelocityMetersPerSec();
-        double angularVel = distanceCalc.getRobotAngularVelocityRadPerSec();
+    double tof = getTimeOfFlightSeconds(rawDistance);
 
-        double compensatedForward = rawDistance + forwardVel * tof;
-        double lateralShift = lateralVel * tof;
-        double effectiveDistance = Math.hypot(compensatedForward, lateralShift);
+    double vx = distanceCalc.getFieldVelocityX();
+    double vy = distanceCalc.getFieldVelocityY();
+    double angularVel = distanceCalc.getRobotAngularVelocityRadPerSec();
 
-        SmartDashboard.putNumber("Shooter/CompForwardDist", compensatedForward);
-        SmartDashboard.putNumber("Shooter/LateralShift", lateralShift);
+    Pose2d robotPose = distanceCalc.getRobotPose();
+    Pose2d targetPose = distanceCalc.getTargetPose();
+
+    Translation2d lookahead = robotPose.getTranslation().plus(new Translation2d(vx * tof, vy * tof));
+    double effectiveDistance = targetPose.getTranslation().getDistance(lookahead);
+
+        SmartDashboard.putNumber("Shooter/LookaheadX", lookahead.getX());
+        SmartDashboard.putNumber("Shooter/LookaheadY", lookahead.getY());
+        SmartDashboard.putNumber("Shooter/CompDistance", effectiveDistance);
         SmartDashboard.putNumber("Shooter/RotationShiftRad", angularVel * tof);
 
         return effectiveDistance;
     }
 
 
-    private double getVelocityCompensatedHood(double rawHoodAngleDeg) {
-        double tof = lookupTimeOfFlight(distanceCalc.getDistanceToAllianceTargetMeters());
-        double angularVel = distanceCalc.getRobotAngularVelocityRadPerSec();
-        return rawHoodAngleDeg + Math.toDegrees(angularVel * tof);
-    }
 
     public void enable() { setStateFromRequest(State.ENABLED); }
     public void disable() { setStateFromRequest(State.DISABLED); }
@@ -163,9 +200,7 @@ public class LookupTable extends StateMachine<LookupTable.State> {
         double rawDistance = distanceCalc.getDistanceToAllianceTargetMeters();
         double compensatedDistance = getVelocityCompensatedDistance(rawDistance);
 
-        double[] result = lookup(compensatedDistance);
-
-        result[1] = getVelocityCompensatedHood(result[1]);
+    double[] result = lookup(compensatedDistance);
 
         SmartDashboard.putNumber("Shooter/RawDistance", rawDistance);
         SmartDashboard.putNumber("Shooter/CompDistance", compensatedDistance);

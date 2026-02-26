@@ -20,6 +20,9 @@ import frc.robot.FlywheelSubsystem.Flywheel;
 import frc.robot.FlywheelSubsystem.Hood;
 import frc.robot.FlywheelSubsystem.FlywheelStateMachine;
 import frc.robot.FlywheelSubsystem.HoodStateMachine;
+import frc.robot.IndexerSubsystem.Indexer;
+import frc.robot.IndexerSubsystem.Hopper;
+import frc.robot.controller.TestController;
 import frc.robot.autos.AutoPoint;
 import frc.robot.autos.AutoSegment;
 import frc.robot.autos.Points;
@@ -53,6 +56,18 @@ public class Robot extends TimedRobot {
   private final IntakePosition intakePosition = new IntakePosition(hardware.intakePivotMotor);
   private final FlywheelStateMachine flywheelSM = new FlywheelStateMachine(flywheel);
   private final HoodStateMachine hoodSM = new HoodStateMachine(hood);
+  private final Indexer indexer = new Indexer(hardware.indexerMotor);
+  private final Hopper hopper = new Hopper(hardware.hopperMotor);
+  private final TestController testController = new TestController(
+    hardware.testController,
+    hood,
+    hoodSM,
+    flywheel,
+    flywheelSM,
+    headingLock,
+    intakePosition,
+    indexer,
+    hopper);
   private final phaseTimer phaseTimer = new phaseTimer();
   
   public Robot() {
@@ -66,6 +81,8 @@ public class Robot extends TimedRobot {
   headingLock.setRedTargetPoint(FieldPoints.getHeadingLockRedPoint());
   headingLock.setBlueTargetPoint(FieldPoints.getHeadingLockBluePoint());
 
+  headingLock.setLookupTable(turretLookup);
+
   configureBindings();
 
   ElasticLayoutUtil.onBoot();
@@ -76,7 +93,6 @@ public class Robot extends TimedRobot {
 
   @Override
   public void robotPeriodic() {
-    // Run the command scheduler so default commands and button bindings execute
     CommandScheduler.getInstance().run();
   }
 
@@ -125,7 +141,6 @@ public class Robot extends TimedRobot {
 
     phaseTimer.markTeleopStart();
 
-    // Enable shooter control from lookup table in teleop
     turretLookup.enable();
   }
 
@@ -167,12 +182,10 @@ public class Robot extends TimedRobot {
 
   hardware.driverController.x().onTrue(outpost.travelToOutpost());
 
-  // Intake roller controls
   hardware.driverController.a().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakeRoller.intake()));
   hardware.driverController.b().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakeRoller.stop()));
   hardware.driverController.leftBumper().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakeRoller.reverse()));
   hardware.driverController.rightBumper().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakeRoller.feed()));
-  // Simple hood/flywheel demo controls (preset RPM and angles)
   hardware.driverController.rightTrigger().onTrue(
     edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> flywheelSM.requestRpm(3500)));
   hardware.driverController.leftTrigger().onTrue(
@@ -183,7 +196,6 @@ public class Robot extends TimedRobot {
   hardware.driverController.back().onTrue(
     edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> hoodSM.requestDegrees(35)));
 
-  // Intake position controls (POV/D-pad)
   hardware.driverController.povUp().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakePosition.requestUp()))
   ;
   hardware.driverController.povDown().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakePosition.requestDown()))
