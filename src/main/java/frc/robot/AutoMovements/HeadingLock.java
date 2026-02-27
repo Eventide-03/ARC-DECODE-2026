@@ -118,15 +118,12 @@ public class HeadingLock extends StateMachine<HeadingLock.HeadingLockState> {
       return;
     }
 
-    // Use LookupTable's dynamic TOF (single source of truth)
     double tofSeconds = (lookupTable != null) ? lookupTable.getTimeOfFlightSeconds(norm) : 1.0;
 
-    // Raw field-relative velocities
     ChassisSpeeds fieldSpeeds = localization.getFieldRelativeSpeeds();
     double vx = fieldSpeeds.vxMetersPerSecond;
     double vy = fieldSpeeds.vyMetersPerSecond;
 
-    // Compute lookahead translation (pose-level lookahead)
     var lookahead = robotPose.getTranslation().plus(new Translation2d(vx * tofSeconds, vy * tofSeconds));
 
     double dxComp = targetPoint.getX() - lookahead.getX();

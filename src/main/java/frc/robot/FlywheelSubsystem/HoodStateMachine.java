@@ -3,12 +3,7 @@ package frc.robot.FlywheelSubsystem;
 import frc.robot.util.scheduling.SubsystemPriority;
 import frc.robot.util.state_machines.StateMachine;
 
-/**
- * Wrapper state machine for the Hood.
- * States:
- * - OFF: hold current position
- * - DEGREE_TARGET: move to target degrees using Motion Magic
- */
+
 public class HoodStateMachine extends StateMachine<HoodStateMachine.State> {
   public enum State { OFF, DEGREE_TARGET }
 

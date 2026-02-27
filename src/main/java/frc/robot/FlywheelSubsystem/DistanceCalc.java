@@ -94,6 +94,23 @@ public class DistanceCalc extends LifecycleSubsystem {
     return FmsSubsystem.isRedAlliance() ? headingLock.getRedTargetPose() : headingLock.getBlueTargetPose();
   }
 
+  // Backwards-compatible accessors used by other subsystems
+  public edu.wpi.first.math.geometry.Pose2d getEstimatedPose() {
+    return localization.getPose();
+  }
+
+  public edu.wpi.first.math.kinematics.ChassisSpeeds getRobotRelativeVelocity() {
+    var field = localization.getFieldRelativeSpeeds();
+    var rot = localization.getPose().getRotation();
+    double vx = field.vxMetersPerSecond * rot.getCos() + field.vyMetersPerSecond * rot.getSin();
+    double vy = -field.vxMetersPerSecond * rot.getSin() + field.vyMetersPerSecond * rot.getCos();
+    return new edu.wpi.first.math.kinematics.ChassisSpeeds(vx, vy, field.omegaRadiansPerSecond);
+  }
+
+  public edu.wpi.first.math.geometry.Translation2d getAllianceTargetTranslation() {
+    return getTargetPose().getTranslation();
+  }
+
   @Override
   public void robotPeriodic() {
     super.robotPeriodic();

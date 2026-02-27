@@ -1,5 +1,6 @@
 package frc.robot.FlywheelSubsystem;
 
+import com.ctre.phoenix6.configs.CurrentLimitsConfigs;
 import com.ctre.phoenix6.configs.MotionMagicConfigs;
 import com.ctre.phoenix6.configs.Slot0Configs;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
@@ -27,6 +28,11 @@ public class Hood {
 				new MotionMagicConfigs()
 						.withMotionMagicCruiseVelocity(20.0)
 						.withMotionMagicAcceleration(40.0);
+		cfg.CurrentLimits = new CurrentLimitsConfigs()
+				.withSupplyCurrentLimit(20.0)
+				.withSupplyCurrentLimitEnable(true)
+				.withStatorCurrentLimit(40.0)
+				.withStatorCurrentLimitEnable(true);
 
 		motor.getConfigurator().apply(cfg);
 	}

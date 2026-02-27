@@ -1,5 +1,7 @@
 package frc.robot.Intake;
 
+import com.ctre.phoenix6.configs.CurrentLimitsConfigs;
+import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.DutyCycleOut;
 import com.ctre.phoenix6.hardware.TalonFX;
 import frc.robot.util.scheduling.SubsystemPriority;
@@ -18,6 +20,14 @@ public class intaker extends StateMachine<intaker.State> {
 	public intaker(TalonFX motor) {
 		super(SubsystemPriority.DEPLOY, State.OFF);
 		this.motor = motor;
+
+		var cfg = new TalonFXConfiguration();
+		cfg.CurrentLimits = new CurrentLimitsConfigs()
+				.withSupplyCurrentLimit(45)
+				.withSupplyCurrentLimitEnable(true)
+				.withStatorCurrentLimit(50.0)
+				.withStatorCurrentLimitEnable(true);
+		motor.getConfigurator().apply(cfg);
 	}
 
 	public void intake() { setStateFromRequest(State.INTAKE); }

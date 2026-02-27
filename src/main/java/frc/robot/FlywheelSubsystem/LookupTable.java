@@ -1,8 +1,13 @@
 package frc.robot.FlywheelSubsystem;
 
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.filter.Debouncer;
+import edu.wpi.first.math.filter.LinearFilter;
 import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
+import edu.wpi.first.math.geometry.Twist2d;
+import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.util.scheduling.SubsystemPriority;
 import frc.robot.util.state_machines.StateMachine;
@@ -11,184 +16,167 @@ import java.util.Comparator;
 import java.util.List;
 
 public class LookupTable extends StateMachine<LookupTable.State> {
+
     public enum State { DISABLED, ENABLED }
 
     public static class ShotPoint {
         public final double distanceMeters;
         public final double rpm;
-        public final double hoodangle;
+        public final double hoodAngleDeg;
 
-        public ShotPoint(double distanceMeters, double rpm, double hoodangle) {
+        public ShotPoint(double distanceMeters, double rpm, double hoodAngleDeg) {
             this.distanceMeters = distanceMeters;
-            this.rpm = rpm;
-            this.hoodangle = hoodangle;
+            this.rpm            = rpm;
+            this.hoodAngleDeg   = hoodAngleDeg;
         }
     }
 
-
-    public double getCurrentTimeOfFlightSeconds() {
-            double rawDistance = distanceCalc.getDistanceToAllianceTargetMeters();
-        double tof = getTimeOfFlightSeconds(rawDistance);
-        SmartDashboard.putNumber("Shooter/CurrentTOF", tof);
-    return tof;
-}
-
-
-    
-    
-
-    private static class TimeOfFlightPoint {
+    private static class TofPoint {
         final double distance;
         final double time;
-
-        TimeOfFlightPoint(double distance, double time) {
-            this.distance = distance;
-            this.time = time;
-        }
+        TofPoint(double distance, double time) { this.distance = distance; this.time = time; }
     }
 
-    private final DistanceCalc distanceCalc;
-    private final Flywheel flywheel;
-    private final Hood hood;
+    public record ShootingParameters(
+            boolean    isValid,
+            Rotation2d driveAngle,
+            double     driveVelocityRadPerSec,
+            double     hoodAngleRad,
+            double     hoodVelocityRadPerSec,
+            double     flywheelRpm,
+            double     distance,
+            double     distanceNoLookahead,
+            double     timeOfFlight) {}
 
-    private final List<ShotPoint> points = new ArrayList<>();
-    private final List<TimeOfFlightPoint> tofPoints = new ArrayList<>();
+    private static final double PHASE_DELAY_SECS = 0.03;
+    private static final double MIN_DISTANCE = 1.0;
+    private static final double MAX_DISTANCE = 6.0;
+    private static final Translation2d ROBOT_TO_LAUNCHER_TRANSLATION = new Translation2d(0.0, 0.0);
+    private static final Rotation2d ROBOT_TO_LAUNCHER_ROTATION = Rotation2d.fromDegrees(0.0);
+    private static final int HOOD_FILTER_TAPS  = 20;
+    private static final int DRIVE_FILTER_TAPS = 75;
+    private static final double RPM_TOLERANCE      = 75.0;
+    private static final double HOOD_TOLERANCE_DEG =  1.0;
 
-    private final Debouncer atGoalDebounce =
-        new Debouncer(0.2, Debouncer.DebounceType.kFalling);
+    private final List<ShotPoint> shotPoints = new ArrayList<>();
+    private final List<TofPoint>  tofPoints  = new ArrayList<>();
 
-    private static final double RPM_TOLERANCE = 75.0;
-    private static final double HOOD_TOLERANCE_DEG = 1.0;
+    private final LinearFilter hoodAngleFilter  = LinearFilter.movingAverage(HOOD_FILTER_TAPS);
+    private final LinearFilter driveAngleFilter = LinearFilter.movingAverage(DRIVE_FILTER_TAPS);
+
+    private double     lastHoodAngleRad = Double.NaN;
+    private Rotation2d lastDriveAngle   = null;
+    private double hoodAngleOffsetDeg = 0.0;
+    private ShootingParameters cachedParameters = null;
 
     private boolean atGoal = false;
+    private final Debouncer atGoalDebouncer = new Debouncer(0.2, Debouncer.DebounceType.kFalling);
+
+    private final DistanceCalc distanceCalc;
+    private final Flywheel     flywheel;
+    private final Hood         hood;
 
     public LookupTable(DistanceCalc distanceCalc, Flywheel flywheel, Hood hood) {
         super(SubsystemPriority.LOCALIZATION, State.DISABLED);
         this.distanceCalc = distanceCalc;
-        this.flywheel = flywheel;
-        this.hood = hood;
-
-        addPoint(new ShotPoint(1.0, 2000, 10));
-        addPoint(new ShotPoint(2.0, 2500, 12));
-        addPoint(new ShotPoint(3.0, 3000, 14));
-        addPoint(new ShotPoint(4.0, 3500, 16));
-        addPoint(new ShotPoint(5.0, 4000, 18));
-        addPoint(new ShotPoint(6.0, 4500, 20));
-
-        addTimeOfFlightPoint(1.0, 0.90);
-        addTimeOfFlightPoint(2.0, 1.00);
-        addTimeOfFlightPoint(3.0, 1.10);
-        addTimeOfFlightPoint(4.0, 1.15);
-        addTimeOfFlightPoint(5.0, 1.20);
-        addTimeOfFlightPoint(6.0, 1.25);
+        this.flywheel     = flywheel;
+        this.hood         = hood;
+// do your job here
+        addShotPoint(new ShotPoint(1.0, 6700, 0));
+        
+        addTofPoint(1.0, 0.90);
     }
 
-    public void addPoint(ShotPoint point) {
-        points.add(point);
-        points.sort(Comparator.comparingDouble(p -> p.distanceMeters));
+    public void addShotPoint(ShotPoint p) {
+        shotPoints.add(p);
+        shotPoints.sort(Comparator.comparingDouble(sp -> sp.distanceMeters));
     }
 
-    private void addTimeOfFlightPoint(double distance, double time) {
-        tofPoints.add(new TimeOfFlightPoint(distance, time));
-        tofPoints.sort(Comparator.comparingDouble(p -> p.distance));
-    }
+    public void clearCache() { cachedParameters = null; }
 
-    private double lookupTimeOfFlight(double distanceMeters) {
-        if (tofPoints.isEmpty()) return 0.0;
-
-        if (distanceMeters <= tofPoints.get(0).distance) {
-            return tofPoints.get(0).time;
-        }
-
-        for (int i = 1; i < tofPoints.size(); i++) {
-            var low = tofPoints.get(i - 1);
-            var high = tofPoints.get(i);
-
-            if (distanceMeters <= high.distance) {
-                double t = (distanceMeters - low.distance) / (high.distance - low.distance);
-                return low.time + t * (high.time - low.time);
-            }
-        }
-
-        return tofPoints.get(tofPoints.size() - 1).time;
-    }
-
-    public double getTimeOfFlightSeconds(double distanceMeters) {
-        if (tofPoints.isEmpty()) return 0.0;
-
-        Pose2d robotPose = distanceCalc.getRobotPose();
-        Pose2d targetPose = distanceCalc.getTargetPose();
-        double vx = distanceCalc.getFieldVelocityX();
-        double vy = distanceCalc.getFieldVelocityY();
-
-        double tof = lookupTimeOfFlight(distanceMeters);
-        for (int i = 0; i < 20; i++) {
-            Translation2d lookahead = robotPose.getTranslation().plus(new Translation2d(vx * tof, vy * tof));
-            double effDist = targetPose.getTranslation().getDistance(lookahead);
-            double nextTof = lookupTimeOfFlight(effDist);
-            if (Math.abs(nextTof - tof) < 1e-4) {
-                tof = nextTof;
-                break;
-            }
-            tof = nextTof;
-        }
-
-        SmartDashboard.putNumber("Shooter/ComputedTOF", tof);
-        return tof;
-    }
-
-    public double[] lookup(double distanceMeters) {
-        if (points.isEmpty()) return new double[] {0.0, 0.0};
-
-        if (distanceMeters <= points.get(0).distanceMeters) {
-            var p = points.get(0);
-            return new double[] {p.rpm, p.hoodangle};
-        }
-
-        for (int i = 1; i < points.size(); i++) {
-            var low = points.get(i - 1);
-            var high = points.get(i);
-
-            if (distanceMeters <= high.distanceMeters) {
-                double t = (distanceMeters - low.distanceMeters)
-                    / (high.distanceMeters - low.distanceMeters);
-                double rpm = low.rpm + t * (high.rpm - low.rpm);
-                double hood = low.hoodangle + t * (high.hoodangle - low.hoodangle);
-                return new double[] {rpm, hood};
-            }
-        }
-
-        var last = points.get(points.size() - 1);
-        return new double[] {last.rpm, last.hoodangle};
-    }
-
-
-    private double getVelocityCompensatedDistance(double rawDistance) {
-
-    double tof = getTimeOfFlightSeconds(rawDistance);
-
-    double vx = distanceCalc.getFieldVelocityX();
-    double vy = distanceCalc.getFieldVelocityY();
-    double angularVel = distanceCalc.getRobotAngularVelocityRadPerSec();
-
-    Pose2d robotPose = distanceCalc.getRobotPose();
-    Pose2d targetPose = distanceCalc.getTargetPose();
-
-    Translation2d lookahead = robotPose.getTranslation().plus(new Translation2d(vx * tof, vy * tof));
-    double effectiveDistance = targetPose.getTranslation().getDistance(lookahead);
-
-        SmartDashboard.putNumber("Shooter/LookaheadX", lookahead.getX());
-        SmartDashboard.putNumber("Shooter/LookaheadY", lookahead.getY());
-        SmartDashboard.putNumber("Shooter/CompDistance", effectiveDistance);
-        SmartDashboard.putNumber("Shooter/RotationShiftRad", angularVel * tof);
-
-        return effectiveDistance;
-    }
-
-
-
-    public void enable() { setStateFromRequest(State.ENABLED); }
+    public void enable()  { setStateFromRequest(State.ENABLED);  }
     public void disable() { setStateFromRequest(State.DISABLED); }
+
+    public boolean isAtGoal() { return atGoal; }
+
+    public double getHoodAngleOffsetDeg() { return hoodAngleOffsetDeg; }
+    public void incrementHoodAngleOffsetDeg(double deltaDeg) { hoodAngleOffsetDeg += deltaDeg; }
+
+    public ShootingParameters getParameters() {
+        if (cachedParameters != null) return cachedParameters;
+
+        Pose2d estimatedPose = distanceCalc.getEstimatedPose();
+        ChassisSpeeds robotVel = distanceCalc.getRobotRelativeVelocity();
+        estimatedPose = estimatedPose.exp(new Twist2d(
+                robotVel.vxMetersPerSecond * PHASE_DELAY_SECS,
+                robotVel.vyMetersPerSecond * PHASE_DELAY_SECS,
+                robotVel.omegaRadiansPerSecond * PHASE_DELAY_SECS));
+
+        Translation2d launcherPos = estimatedPose.getTranslation()
+                .plus(ROBOT_TO_LAUNCHER_TRANSLATION.rotateBy(estimatedPose.getRotation()));
+
+        Translation2d target = distanceCalc.getAllianceTargetTranslation();
+        double rawDistance = target.getDistance(launcherPos);
+
+        ChassisSpeeds launcherVel = computeLauncherVelocity(robotVel, estimatedPose.getRotation());
+
+        Translation2d lookaheadLauncherPos = launcherPos;
+        double lookaheadDistance = rawDistance;
+        double timeOfFlight = lookupTof(rawDistance);
+
+        for (int i = 0; i < 20; i++) {
+            timeOfFlight = lookupTof(lookaheadDistance);
+            double dx = launcherVel.vxMetersPerSecond * timeOfFlight;
+            double dy = launcherVel.vyMetersPerSecond * timeOfFlight;
+            lookaheadLauncherPos = launcherPos.plus(new Translation2d(dx, dy));
+            lookaheadDistance    = target.getDistance(lookaheadLauncherPos);
+        }
+
+        Pose2d lookaheadRobotPose = new Pose2d(
+                lookaheadLauncherPos.minus(
+                        ROBOT_TO_LAUNCHER_TRANSLATION.rotateBy(estimatedPose.getRotation())),
+                estimatedPose.getRotation());
+        Rotation2d driveAngle = getDriveAngleWithLauncherOffset(lookaheadRobotPose, target);
+
+        double[] shotParams   = lookupShot(lookaheadDistance);
+        double   flywheelRpm  = shotParams[0];
+        double   hoodAngleRad = Math.toRadians(shotParams[1]);
+
+        if (lastDriveAngle == null)         lastDriveAngle   = driveAngle;
+        if (Double.isNaN(lastHoodAngleRad)) lastHoodAngleRad = hoodAngleRad;
+
+        double dt = 0.02;
+        double hoodVelocity  = hoodAngleFilter.calculate((hoodAngleRad - lastHoodAngleRad) / dt);
+        double driveVelocity = driveAngleFilter.calculate(driveAngle.minus(lastDriveAngle).getRadians() / dt);
+
+        lastHoodAngleRad = hoodAngleRad;
+        lastDriveAngle   = driveAngle;
+
+        boolean valid = lookaheadDistance >= MIN_DISTANCE
+                     && lookaheadDistance <= MAX_DISTANCE
+                     && checkBadZones(estimatedPose);
+
+        double hoodAngleWithOffset = hoodAngleRad + Math.toRadians(hoodAngleOffsetDeg);
+
+        cachedParameters = new ShootingParameters(
+                valid,
+                driveAngle,
+                driveVelocity,
+                hoodAngleWithOffset,
+                hoodVelocity,
+                flywheelRpm,
+                lookaheadDistance,
+                rawDistance,
+                timeOfFlight);
+
+        SmartDashboard.putNumber("Shooter/TargetRPM",         flywheelRpm);
+        SmartDashboard.putNumber("Shooter/TargetHoodDeg",     Math.toDegrees(hoodAngleWithOffset));
+        SmartDashboard.putNumber("Shooter/TimeOfFlight",      timeOfFlight);
+        SmartDashboard.putNumber("Shooter/DriveAngleDeg",     driveAngle.getDegrees());
+        SmartDashboard.putBoolean("Shooter/IsValid",          valid);
+
+        return cachedParameters;
+    }
 
     @Override
     protected State getNextState(State current) { return current; }
@@ -196,31 +184,97 @@ public class LookupTable extends StateMachine<LookupTable.State> {
     @Override
     public void robotPeriodic() {
         super.robotPeriodic();
+        clearCache();
 
-        double rawDistance = distanceCalc.getDistanceToAllianceTargetMeters();
-        double compensatedDistance = getVelocityCompensatedDistance(rawDistance);
+        if (getState() != State.ENABLED) return;
 
-    double[] result = lookup(compensatedDistance);
+        ShootingParameters p = getParameters();
+        if (!p.isValid()) return;
 
-        SmartDashboard.putNumber("Shooter/RawDistance", rawDistance);
-        SmartDashboard.putNumber("Shooter/CompDistance", compensatedDistance);
-        SmartDashboard.putNumber("Shooter/TargetRPM", result[0]);
-        SmartDashboard.putNumber("Shooter/TargetHoodDeg", result[1]);
+        flywheel.spinFlywheel(p.flywheelRpm());
+        hood.setAngleDegrees(Math.toDegrees(p.hoodAngleRad()));
 
-        if (getState() == State.ENABLED) {
-            flywheel.spinFlywheel(result[0]);
-            hood.setAngleDegrees(result[1]);
+        boolean inTol =
+                Math.abs(flywheel.getRpm()      - p.flywheelRpm())                  <= RPM_TOLERANCE
+             && Math.abs(hood.getAngleDegrees() - Math.toDegrees(p.hoodAngleRad())) <= HOOD_TOLERANCE_DEG;
 
-            boolean inTol =
-                Math.abs(flywheel.getRpm() - result[0]) <= RPM_TOLERANCE
-                && Math.abs(hood.getAngleDegrees() - result[1]) <= HOOD_TOLERANCE_DEG;
+        atGoal = atGoalDebouncer.calculate(inTol);
+        SmartDashboard.putBoolean("Shooter/AtGoal", atGoal);
+    }
 
-            atGoal = atGoalDebounce.calculate(inTol);
-            SmartDashboard.putBoolean("Shooter/AtGoal", atGoal);
+    private void addTofPoint(double distance, double time) {
+        tofPoints.add(new TofPoint(distance, time));
+        tofPoints.sort(Comparator.comparingDouble(p -> p.distance));
+    }
+
+    private double lookupTof(double distanceMeters) {
+        if (tofPoints.isEmpty()) return 0.0;
+        if (distanceMeters <= tofPoints.get(0).distance) return tofPoints.get(0).time;
+        for (int i = 1; i < tofPoints.size(); i++) {
+            TofPoint lo = tofPoints.get(i - 1), hi = tofPoints.get(i);
+            if (distanceMeters <= hi.distance) {
+                double t = (distanceMeters - lo.distance) / (hi.distance - lo.distance);
+                return lo.time + t * (hi.time - lo.time);
+            }
         }
+        return tofPoints.get(tofPoints.size() - 1).time;
     }
 
-    public boolean isAtGoal() {
-        return atGoal;
+    private double[] lookupShot(double distanceMeters) {
+        if (shotPoints.isEmpty()) return new double[]{0, 0};
+        if (distanceMeters <= shotPoints.get(0).distanceMeters) {
+            ShotPoint p = shotPoints.get(0);
+            return new double[]{p.rpm, p.hoodAngleDeg};
+        }
+        for (int i = 1; i < shotPoints.size(); i++) {
+            ShotPoint lo = shotPoints.get(i - 1), hi = shotPoints.get(i);
+            if (distanceMeters <= hi.distanceMeters) {
+                double t = (distanceMeters - lo.distanceMeters) / (hi.distanceMeters - lo.distanceMeters);
+                return new double[]{
+                        lo.rpm          + t * (hi.rpm          - lo.rpm),
+                        lo.hoodAngleDeg + t * (hi.hoodAngleDeg - lo.hoodAngleDeg)
+                };
+            }
+        }
+        ShotPoint last = shotPoints.get(shotPoints.size() - 1);
+        return new double[]{last.rpm, last.hoodAngleDeg};
     }
+
+    private ChassisSpeeds computeLauncherVelocity(ChassisSpeeds robotRelVel, Rotation2d robotAngle) {
+        double fieldVx = robotRelVel.vxMetersPerSecond * robotAngle.getCos()
+                       - robotRelVel.vyMetersPerSecond * robotAngle.getSin();
+        double fieldVy = robotRelVel.vxMetersPerSecond * robotAngle.getSin()
+                       + robotRelVel.vyMetersPerSecond * robotAngle.getCos();
+
+        double omega = robotRelVel.omegaRadiansPerSecond;
+        Translation2d offset = ROBOT_TO_LAUNCHER_TRANSLATION.rotateBy(robotAngle);
+        fieldVx += -omega * offset.getY();
+        fieldVy +=  omega * offset.getX();
+
+        return new ChassisSpeeds(fieldVx, fieldVy, omega);
+    }
+
+    private Rotation2d getDriveAngleWithLauncherOffset(Pose2d robotPose, Translation2d target) {
+        Rotation2d fieldToTargetAngle = target.minus(robotPose.getTranslation()).getAngle();
+        double dist = target.getDistance(robotPose.getTranslation());
+        double lateralOffset = ROBOT_TO_LAUNCHER_TRANSLATION.rotateBy(robotPose.getRotation()).getY();
+        Rotation2d offsetAngle = new Rotation2d(Math.asin(MathUtil.clamp(lateralOffset / dist, -1.0, 1.0)));
+        return fieldToTargetAngle.plus(offsetAngle).plus(ROBOT_TO_LAUNCHER_ROTATION);
+    }
+
+    protected boolean checkBadZones(Pose2d estimatedPose) {
+        return true;
+    }
+
+    public double getMinTimeOfFlight() { return lookupTof(MIN_DISTANCE); }
+
+    public double getTimeOfFlightSeconds(double distanceMeters) {
+        return lookupTof(distanceMeters);
+    }
+
+    public boolean hasCachedParameters() { return cachedParameters != null; }
+    public boolean cachedParametersValid() { return cachedParameters != null && cachedParameters.isValid(); }
+    public double getCachedFlywheelRpm() { return (cachedParameters != null) ? cachedParameters.flywheelRpm() : 0.0; }
+    public double getCachedHoodAngleRad() { return (cachedParameters != null) ? cachedParameters.hoodAngleRad() : 0.0; }
+    public double getCachedTimeOfFlight() { return (cachedParameters != null) ? cachedParameters.timeOfFlight() : 0.0; }
 }

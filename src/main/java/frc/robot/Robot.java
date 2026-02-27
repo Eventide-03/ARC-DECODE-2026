@@ -33,6 +33,7 @@ import frc.robot.util.scheduling.LifecycleSubsystemManager;
 import frc.robot.vision.VisionSubsystem;
 import frc.robot.AutoMovements.FieldPoints;
 import frc.robot.currentPhase.phaseTimer;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
 
 public class Robot extends TimedRobot {
@@ -68,24 +69,24 @@ public class Robot extends TimedRobot {
     intakePosition,
     indexer,
     hopper);
+
+
+
   private final phaseTimer phaseTimer = new phaseTimer();
   
   public Robot() {
-
     DriverStation.silenceJoystickConnectionWarning(RobotBase.isSimulation());
 
+    LifecycleSubsystemManager.ready();
 
+    headingLock.setRedTargetPoint(FieldPoints.getHeadingLockRedPoint());
+    headingLock.setBlueTargetPoint(FieldPoints.getHeadingLockBluePoint());
 
-  LifecycleSubsystemManager.ready();
+    headingLock.setLookupTable(turretLookup);
 
-  headingLock.setRedTargetPoint(FieldPoints.getHeadingLockRedPoint());
-  headingLock.setBlueTargetPoint(FieldPoints.getHeadingLockBluePoint());
+    configureBindings();
 
-  headingLock.setLookupTable(turretLookup);
-
-  configureBindings();
-
-  ElasticLayoutUtil.onBoot();
+    ElasticLayoutUtil.onBoot();
   }
 
   @Override
@@ -122,7 +123,7 @@ public class Robot extends TimedRobot {
       .followSegment(segment, true)
       .withName((isRed ? "Red" : "Blue") + "_A_to_B_Auto");
 
-  edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance().schedule(autonomousCommand);
+    edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance().schedule(autonomousCommand);
 
     ElasticLayoutUtil.onEnable();
   }
@@ -140,8 +141,10 @@ public class Robot extends TimedRobot {
     ElasticLayoutUtil.onEnable();
 
     phaseTimer.markTeleopStart();
+    intakePosition.requestUp();
+    intakeRoller.stop();
 
-    turretLookup.enable();
+    edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance().schedule(localization.getZeroCommand());
   }
 
   @Override
@@ -175,34 +178,75 @@ public class Robot extends TimedRobot {
                 })
             .withName("DefaultSwerveCommand"));
 
-  hardware.driverController.back().onTrue(localization.getZeroCommand());
+    hardware.driverController.rightTrigger().whileTrue(
+      edu.wpi.first.wpilibj2.command.Commands.startEnd(
+        () -> {
+          intakePosition.requestDown();
+          intakeRoller.intake();
+          SmartDashboard.putBoolean("Driver/IntakeIsDown", true);
+        },
+        () -> {
+          intakePosition.requestUp();
+          intakeRoller.stop();
+          SmartDashboard.putBoolean("Driver/IntakeIsDown", false);
+        }
+      )
+    );
 
-  hardware.driverController.y().onTrue(
-      edu.wpi.first.wpilibj2.command.Commands.runOnce(headingLock::enableForAlliance));
+    hardware.driverController.y().whileTrue(
+      edu.wpi.first.wpilibj2.command.Commands.startEnd(
+        () -> {
+          turretLookup.enable();
+          headingLock.enableForAlliance();
+          SmartDashboard.putBoolean("Driver/ShootingActive", true);
+        },
+        () -> {
+          turretLookup.disable();
+          headingLock.disableLock();
+          flywheelSM.requestOff();
+          hoodSM.requestOff();
+          indexer.stop();
+          hopper.stop();
+          SmartDashboard.putBoolean("Driver/ShootingActive", false);
+        }
+      ).alongWith(
+        edu.wpi.first.wpilibj2.command.Commands.run(() -> {
+          if (!turretLookup.cachedParametersValid()) return;
+          double rpm = turretLookup.getCachedFlywheelRpm();
+          double hoodRad = turretLookup.getCachedHoodAngleRad();
+          flywheelSM.requestRpm(rpm);
+          hoodSM.requestDegrees(Math.toDegrees(hoodRad));
+          indexer.feed();
+          hopper.feed();
+        })
+      )
+    );
 
-  hardware.driverController.x().onTrue(outpost.travelToOutpost());
-
-  hardware.driverController.a().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakeRoller.intake()));
-  hardware.driverController.b().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakeRoller.stop()));
-  hardware.driverController.leftBumper().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakeRoller.reverse()));
-  hardware.driverController.rightBumper().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakeRoller.feed()));
-  hardware.driverController.rightTrigger().onTrue(
-    edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> flywheelSM.requestRpm(3500)));
-  hardware.driverController.leftTrigger().onTrue(
-    edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> flywheelSM.requestOff()));
-
-  hardware.driverController.start().onTrue(
-    edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> hoodSM.requestDegrees(20)));
-  hardware.driverController.back().onTrue(
-    edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> hoodSM.requestDegrees(35)));
-
-  hardware.driverController.povUp().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakePosition.requestUp()))
-  ;
-  hardware.driverController.povDown().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakePosition.requestDown()))
-  ;
-  hardware.driverController.povLeft().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakePosition.off()))
-  ;
-  hardware.driverController.povRight().onTrue(edu.wpi.first.wpilibj2.command.Commands.runOnce(() -> intakePosition.off()))
-  ;
+    hardware.driverController.leftTrigger().whileTrue(
+      edu.wpi.first.wpilibj2.command.Commands.startEnd(
+        () -> {
+          turretLookup.enable();
+          SmartDashboard.putBoolean("Driver/ShootingActive", true);
+        },
+        () -> {
+          turretLookup.disable();
+          flywheelSM.requestOff();
+          hoodSM.requestOff();
+          indexer.stop();
+          hopper.stop();
+          SmartDashboard.putBoolean("Driver/ShootingActive", false);
+        }
+      ).alongWith(
+        edu.wpi.first.wpilibj2.command.Commands.run(() -> {
+          if (!turretLookup.cachedParametersValid()) return;
+          double rpm = turretLookup.getCachedFlywheelRpm();
+          double hoodRad = turretLookup.getCachedHoodAngleRad();
+          flywheelSM.requestRpm(rpm);
+          hoodSM.requestDegrees(Math.toDegrees(hoodRad));
+          indexer.feed();
+          hopper.feed();
+        })
+      )
+    );
   }
 }

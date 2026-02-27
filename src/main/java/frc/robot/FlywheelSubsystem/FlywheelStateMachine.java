@@ -4,12 +4,7 @@ package frc.robot.FlywheelSubsystem;
 import frc.robot.util.scheduling.SubsystemPriority;
 import frc.robot.util.state_machines.StateMachine;
 
-/**
- * Wrapper state machine for the Flywheel.
- * States:
- * - OFF: stop
- * - SPIN_RPM: spin to target RPM (bang-bang controller inside Flywheel)
- */
+
 public class FlywheelStateMachine extends StateMachine<FlywheelStateMachine.State> {
   public enum State { OFF, SPIN_RPM }
 

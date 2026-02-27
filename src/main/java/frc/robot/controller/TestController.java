@@ -13,13 +13,13 @@ import frc.robot.Intake.IntakePosition;
 
 /*
  
-  Controls:
-D-pad Up/Down: Hood target +1/-1 deg; report current angle.
-D-pad Right/Left: Flywheel target +50/-50 RPM; report target.
-Right bumper: Toggle heading lock enable/disable.
-B/X: Turret offset +1/-1 deg; report current offset.
-Left/Right triggers: IntakePosition Up setpoint +1/-1 deg; also adjust indexer/hopper targets by +/-50 RPM (converted to duty).
-A: Toggle IntakePosition between Up and Down (starts Up).
+controls
+dpad up/down  hood target +-1 deg; report current angle.
+dpad right/left flywheel target +-50 rpm report target.
+right bumper  -toggle heading lock enable/disable.
+b/x - Turret offset +-1 deg report current offset.
+left/right trigger - intakepos up setpoint +-1 deg; also adjust indexer/hopper targets by +-50 rpm conv to dut
+a - toggle intakeposition between Up and Down (starts Up).
  */
 public class TestController {
   private final CommandXboxController controller;

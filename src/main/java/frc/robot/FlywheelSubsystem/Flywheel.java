@@ -1,5 +1,7 @@
 package frc.robot.FlywheelSubsystem;
 
+import com.ctre.phoenix6.configs.CurrentLimitsConfigs;
+import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.DutyCycleOut;
 import com.ctre.phoenix6.hardware.TalonFX;
 import edu.wpi.first.math.filter.Debouncer;
@@ -20,6 +22,15 @@ public class Flywheel {
 	public Flywheel(TalonFX a1, TalonFX a2) {
 		this.a1 = a1;
 		this.a2 = a2;
+
+		var cfg = new TalonFXConfiguration();
+		cfg.CurrentLimits = new CurrentLimitsConfigs()
+				.withSupplyCurrentLimit(60.0)
+				.withSupplyCurrentLimitEnable(true)
+				.withStatorCurrentLimit(80.0)
+				.withStatorCurrentLimitEnable(true);
+		a1.getConfigurator().apply(cfg);
+		a2.getConfigurator().apply(cfg);
 	}
 
 	public void spinFlywheel(double rpm) {

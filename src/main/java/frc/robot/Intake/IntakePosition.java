@@ -1,5 +1,6 @@
 package frc.robot.Intake;
 
+import com.ctre.phoenix6.configs.CurrentLimitsConfigs;
 import com.ctre.phoenix6.configs.MotionMagicConfigs;
 import com.ctre.phoenix6.configs.Slot0Configs;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
@@ -20,6 +21,7 @@ public class IntakePosition extends StateMachine<IntakePosition.State> {
 	private double upDegrees = 0.0;
 	private double downDegrees = 35.0;
 
+
 	public IntakePosition(TalonFX motor) {
 		super(SubsystemPriority.DEPLOY, State.OFF);
 		this.motor = motor;
@@ -29,6 +31,11 @@ public class IntakePosition extends StateMachine<IntakePosition.State> {
 		cfg.MotionMagic = new MotionMagicConfigs()
 				.withMotionMagicCruiseVelocity(15.0)
 				.withMotionMagicAcceleration(30.0);
+		cfg.CurrentLimits = new CurrentLimitsConfigs()
+				.withSupplyCurrentLimit(45)
+				.withSupplyCurrentLimitEnable(true)
+				.withStatorCurrentLimit(50)
+				.withStatorCurrentLimitEnable(true);
 		motor.getConfigurator().apply(cfg);
 	}
 
