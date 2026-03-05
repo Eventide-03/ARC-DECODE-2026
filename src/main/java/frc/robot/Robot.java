@@ -272,7 +272,7 @@ public class Robot extends TimedRobot {
     );
 
     // Left stick button: lock Y to nearest trench (0.7 or 7.45) while held
-    hardware.driverController.leftStick().whileTrue(
+    hardware.driverController.leftBumper().whileTrue(
       Commands.run(() -> {
         double robotY = localization.getPose().getY();
         double targetY = (Math.abs(robotY - 0.7) <= Math.abs(robotY - 7.45)) ? 0.7 : 7.45;
