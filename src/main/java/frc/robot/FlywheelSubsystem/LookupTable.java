@@ -22,13 +22,13 @@ public class LookupTable extends StateMachine<LookupTable.State> {
     public enum State { DISABLED, ENABLED }
 
     // Pass interp table: distance (m) → RPM
-    public static final double PASS_HOOD_ANGLE_DEG = -50.0;
+    public static final double PASS_HOOD_ANGLE_DEG = -60.0;
     private static final InterpolatingDoubleTreeMap PASS_RPM_TABLE =
         InterpolatingDoubleTreeMap.ofEntries(
-            Map.entry(3.0, 3000.0),
-            Map.entry(5.0, 5000.0),
-            Map.entry(7.0, 6200.0),
-            Map.entry(9.0, 6500.0));
+            Map.entry(3.0, 3000.0  - 1000.0),
+            Map.entry(5.0, 5000.0 - 1000.0),
+            Map.entry(7.0, 5700.0),
+            Map.entry(9.0, 6000.0));
 
     public static double getPassRpm(double distanceMeters) {
         return PASS_RPM_TABLE.get(distanceMeters);
@@ -67,7 +67,7 @@ public class LookupTable extends StateMachine<LookupTable.State> {
     private static final double MIN_DISTANCE = 1.0;
     private static final double MAX_DISTANCE = 6.0;
     private static final Translation2d ROBOT_TO_LAUNCHER_TRANSLATION = new Translation2d(0.0, 0.0);
-    private static final Rotation2d ROBOT_TO_LAUNCHER_ROTATION = Rotation2d.fromDegrees(0.0);
+    private static final Rotation2d ROBOT_TO_LAUNCHER_ROTATION = Rotation2d.fromDegrees(36 + 180);
     private static final int HOOD_FILTER_TAPS  = 20;
     private static final int DRIVE_FILTER_TAPS = 75;
     private static final double RPM_TOLERANCE      = 75.0;
@@ -98,13 +98,17 @@ public class LookupTable extends StateMachine<LookupTable.State> {
         this.hood         = hood;
 
 // do your job here
-        addShotPoint(new ShotPoint(2.8, 3200, 0));
-        addShotPoint(new ShotPoint(3.2, 3300, 0));
-        addShotPoint(new ShotPoint(3.6, 3490, 0));
-        addShotPoint(new ShotPoint(4, 3600, 0));
-        addShotPoint(new ShotPoint(4.9, 4000, 0));
-        addShotPoint(new ShotPoint(5.1, 4200, 0));
-        addTofPoint(7.83, 1.2);
+        addShotPoint(new ShotPoint(2.8, 3100, 0));
+        addShotPoint(new ShotPoint(3.2, 3200, 0));
+        addShotPoint(new ShotPoint(3.6, 3390, 0));
+        addShotPoint(new ShotPoint(4, 3500, 0));
+        addShotPoint(new ShotPoint(4.9, 3900, 0));
+        addShotPoint(new ShotPoint(5.1, 4100, 0));
+
+
+        //addTofPoint(4, 0.4);
+               // addTofPoint(5, 10000);
+
     }
 
     public void addShotPoint(ShotPoint p) {

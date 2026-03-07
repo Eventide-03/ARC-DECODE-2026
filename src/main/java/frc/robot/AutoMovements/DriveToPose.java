@@ -14,7 +14,7 @@ import frc.robot.swerve.SwerveSubsystem;
 
 public class DriveToPose extends Command {
   private static final double MAX_SPEED = 3.0; 
-  private static final double DRIVE_TOLERANCE = 0.1; 
+  private static final double DRIVE_TOLERANCE = 0.5; 
   private static final double THETA_TOLERANCE = 5.0; 
 
   private static final double PHASE_TRANSITION_Y_TOLERANCE = 0.4; 
@@ -25,17 +25,29 @@ public class DriveToPose extends Command {
   private final SwerveSubsystem swerve;
   private final LocalizationSubsystem localization;
   private final Supplier<Pose2d> targetSupplier;
-  private final PIDController xController = new PIDController(2.0, 0.0, 0.0);
-  private final PIDController yController = new PIDController(2.0, 0.0, 0.0);
+  private final PIDController xController = new PIDController(4.0, 0.0, 0.0);
+  private final PIDController yController = new PIDController(4.0, 0.0, 0.0);
   private final PIDController thetaController = new PIDController(4.0, 0.0, 0.1);
+
+  private final boolean simultaneous;
 
   private Pose2d targetPose;
   private Phase phase;
 
+  /** Phased driving: Y+heading first, then all axes. */
   public DriveToPose(SwerveSubsystem swerve, LocalizationSubsystem localization, Supplier<Pose2d> target) {
+    this(swerve, localization, target, false);
+  }
+
+  /**
+   * @param simultaneous If true, drives X, Y, and rotation all at once from the start.
+   *                     If false, uses the default phased approach (Y+heading first, then all).
+   */
+  public DriveToPose(SwerveSubsystem swerve, LocalizationSubsystem localization, Supplier<Pose2d> target, boolean simultaneous) {
     this.swerve = swerve;
     this.localization = localization;
     this.targetSupplier = target;
+    this.simultaneous = simultaneous;
     thetaController.enableContinuousInput(-Math.PI, Math.PI);
     addRequirements(swerve);
   }
@@ -46,7 +58,7 @@ public class DriveToPose extends Command {
     xController.reset();
     yController.reset();
     thetaController.reset();
-    phase = Phase.Y_AND_HEADING;
+    phase = simultaneous ? Phase.ALL : Phase.Y_AND_HEADING;
 
     SmartDashboard.putString("DriveToPose/Target",
         String.format("(%.2f, %.2f, %.1f deg)", targetPose.getX(), targetPose.getY(),

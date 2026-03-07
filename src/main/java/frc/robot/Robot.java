@@ -30,6 +30,7 @@ import frc.robot.autos.AutoPoint;
 import frc.robot.autos.AutoSegment;
 import frc.robot.autos.Points;
 import frc.robot.autos.Trailblazer;
+import frc.robot.autos.PointToPointAutos;
 import frc.robot.autos.constraints.AutoConstraintOptions;
 import frc.robot.util.ElasticLayoutUtil;
 import frc.robot.util.scheduling.LifecycleSubsystemManager;
@@ -38,6 +39,7 @@ import frc.robot.AutoMovements.FieldPoints;
 import frc.robot.fms.FmsSubsystem;
 import frc.robot.currentPhase.phaseTimer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj.GenericHID.RumbleType;
 import frc.robot.AutoMovements.*;
 import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.auto.NamedCommands;
@@ -52,6 +54,7 @@ import edu.wpi.first.math.geometry.Translation2d;
 
 public class Robot extends TimedRobot {
   private static final boolean ASSUME_RED_ALLIANCE = false;
+  private static final boolean ENABLE_DASHBOARD = true;
   private Command autonomousCommand = Commands.none();
   private final Hardware hardware = new Hardware();
 
@@ -88,6 +91,7 @@ public class Robot extends TimedRobot {
 
 
   private final phaseTimer phaseTimer = new phaseTimer();
+  private final PointToPointAutos pointToPointAutos;
   private double tuningRpm = 3200.0;
   private final Orchestra orchestra = new Orchestra();
   private final edu.wpi.first.math.controller.PIDController trenchYController =
@@ -95,10 +99,18 @@ public class Robot extends TimedRobot {
   private Translation2d savedRedTarget;
   private Translation2d savedBlueTarget;
   private Translation2d activePassTarget;
+  private boolean rtShootMode = true;
+  private phaseTimer.Phase lastPhase = null;
+  private boolean warningRumbleSent = false;
+  // Rumble pattern: array of {duration, pause, duration, pause, ...} in seconds
+  // Negative values = rumble off (pause), positive = rumble on
+  private double[] rumblePattern = null;
+  private int rumblePatternIndex = 0;
+  private double rumbleStepEndTime = 0;
 
   
   public Robot() {
-    DriverStation.silenceJoystickConnectionWarning(RobotBase.isSimulation());
+    DriverStation.silenceJoystickConnectionWarning(true);
 
     LifecycleSubsystemManager.ready();
 
@@ -140,6 +152,11 @@ public class Robot extends TimedRobot {
 
     configureBindings();
 
+    // Set up point-to-point auto chooser (shows on SmartDashboard as "Auto Chooser")
+    pointToPointAutos = new PointToPointAutos(
+        swerve, localization, flywheel, hood, flywheelSM, hoodSM,
+        headingLock, turretLookup, indexer, hopper, intakeRoller, intakePosition);
+
     ElasticLayoutUtil.onBoot();
   }
 
@@ -165,12 +182,8 @@ public class Robot extends TimedRobot {
 
   @Override
   public void autonomousInit() {
-    PathPlannerAuto auto = new PathPlannerAuto("New Auto");
-
-    // Reset pose and heading to the auto's starting pose
-    localization.resetPose(auto.getStartingPose());
-
-    autonomousCommand = auto;
+    // Use the point-to-point auto chooser from SmartDashboard
+    autonomousCommand = pointToPointAutos.getSelected();
     CommandScheduler.getInstance().schedule(autonomousCommand);
 
     ElasticLayoutUtil.onEnable();
@@ -184,20 +197,81 @@ public class Robot extends TimedRobot {
 
   @Override
   public void teleopInit() {
-           intakePosition.retract();
+    // Cancel all auto commands but keep the current pose
+    CommandScheduler.getInstance().cancelAll();
 
+    // Stop all mechanisms
+    flywheel.stop();
+    hood.stopMotor();
+    indexer.stop();
+    hopper.stop();
+    intakeRoller.stop();
+    intakePosition.retract();
+    headingLock.disableLock();
+    turretLookup.disable();
+    flywheelSM.requestOff();
+    hoodSM.requestOff();
 
     ElasticLayoutUtil.onEnable();
 
     phaseTimer.markTeleopStart();
-   // intakePosition.requestUp();
-   // intakeRoller.stop();
-
-    edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance().schedule(localization.getZeroCommand());
+    lastPhase = phaseTimer.getCurrentPhase();
+    warningRumbleSent = false;
   }
 
   @Override
-  public void teleopPeriodic() {}
+  public void teleopPeriodic() {
+    phaseTimer.Phase currentPhase = phaseTimer.getCurrentPhase();
+    double remaining = phaseTimer.getSecondsRemainingInCurrentPhase();
+
+    // 5 seconds before shift ends: three quick rumble pulses
+    if (remaining <= 5.0 && remaining > 4.5 && !warningRumbleSent && rumblePattern == null) {
+      // Pattern: on 0.15s, off 0.1s, on 0.15s, off 0.1s, on 0.15s
+      rumblePattern = new double[]{0.15, 0.1, 0.15, 0.1, 0.15};
+      rumblePatternIndex = 0;
+      rumbleStepEndTime = 0;
+      warningRumbleSent = true;
+    }
+
+    // Shift change: one long rumble
+    if (lastPhase != null && currentPhase != lastPhase) {
+      rumblePattern = new double[]{0.8};
+      rumblePatternIndex = 0;
+      rumbleStepEndTime = 0;
+      warningRumbleSent = false;
+    }
+    lastPhase = currentPhase;
+
+    // Drive the rumble pattern
+    double now = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
+    if (rumblePattern != null) {
+      if (rumbleStepEndTime == 0) {
+        // Start current step
+        boolean isOn = (rumblePatternIndex % 2) == 0;
+        hardware.driverController.getHID().setRumble(RumbleType.kBothRumble, isOn ? 1.0 : 0.0);
+        rumbleStepEndTime = now + rumblePattern[rumblePatternIndex];
+      } else if (now >= rumbleStepEndTime) {
+        rumblePatternIndex++;
+        if (rumblePatternIndex >= rumblePattern.length) {
+          // Pattern done
+          hardware.driverController.getHID().setRumble(RumbleType.kBothRumble, 0.0);
+          rumblePattern = null;
+        } else {
+          boolean isOn = (rumblePatternIndex % 2) == 0;
+          hardware.driverController.getHID().setRumble(RumbleType.kBothRumble, isOn ? 1.0 : 0.0);
+          rumbleStepEndTime = now + rumblePattern[rumblePatternIndex];
+        }
+      }
+    }
+
+    // Phase telemetry
+    if (ENABLE_DASHBOARD) {
+      SmartDashboard.putString("Phase/Current", currentPhase.name());
+      SmartDashboard.putNumber("Phase/ElapsedSec", phaseTimer.getElapsedSec());
+      SmartDashboard.putNumber("Phase/SecsInPhase", phaseTimer.getSecondsIntoCurrentPhase());
+      SmartDashboard.putNumber("Phase/SecsRemaining", phaseTimer.getSecondsRemainingInCurrentPhase());
+    }
+  }
 
   @Override
   public void teleopExit() {}
@@ -242,6 +316,18 @@ public class Robot extends TimedRobot {
 
     // Hood states
     NamedCommands.registerCommand("HoodOff", Commands.runOnce(() -> hoodSM.requestOff()));
+
+    // Heading lock + lookup table: face target and spin up
+    NamedCommands.registerCommand("FaceTarget", Commands.runOnce(() -> {
+      headingLock.enableForAlliance();
+      turretLookup.enable();
+    }));
+    NamedCommands.registerCommand("FaceTargetOff", Commands.runOnce(() -> {
+      headingLock.disableLock();
+      turretLookup.disable();
+      flywheelSM.requestOff();
+      hoodSM.requestOff();
+    }));
   }
 
   private void configureBindings() {
@@ -252,58 +338,25 @@ public class Robot extends TimedRobot {
       })
     );
 
-    // B button: play orchestra music while held, stop on release
-    hardware.driverController.b().whileTrue(
-      edu.wpi.first.wpilibj2.command.Commands.startEnd(
-        () -> {
-          // Stop all subsystems that write to motors so Orchestra can control them
-          flywheel.stop();
-          hood.stopMotor();
-          indexer.stop();
-          hopper.stop();
-          intakeRoller.stop();
-          intakePosition.retract();
-          orchestra.play();
-        },
-        () -> {
-          orchestra.stop();
-        }
-      )
-    );
 
-    // Left stick button: lock Y to nearest trench (0.7 or 7.45) while held
     hardware.driverController.leftBumper().whileTrue(
       Commands.run(() -> {
         double robotY = localization.getPose().getY();
         double targetY = (Math.abs(robotY - 0.7) <= Math.abs(robotY - 7.45)) ? 0.7 : 7.45;
         double vy = trenchYController.calculate(robotY, targetY);
         swerve.overrideTeleopVY(vy);
-        SmartDashboard.putBoolean("Trench/Locked", true);
-        SmartDashboard.putNumber("Trench/TargetY", targetY);
+        if (ENABLE_DASHBOARD) {
+          SmartDashboard.putBoolean("Trench/Locked", true);
+          SmartDashboard.putNumber("Trench/TargetY", targetY);
+        }
       }).finallyDo(() -> {
         swerve.clearTeleopVYOverride();
         trenchYController.reset();
-        SmartDashboard.putBoolean("Trench/Locked", false);
+        if (ENABLE_DASHBOARD) SmartDashboard.putBoolean("Trench/Locked", false);
       })
     );
 
     
-    hardware.driverController.x().whileTrue(
-      Commands.run(() -> {
-        flywheel.spinFlywheel(tuningRpm);
-        if (flywheel.isAtGoal()) {
-          indexer.setDutyPercent(1.0);
-          hopper.setDutyPercent(0.7);
-          intakeRoller.reverse();
-        }
-      }).finallyDo(() -> {
-        flywheel.stop();
-        indexer.stop();
-        hopper.stop();
-        intakeRoller.stop();
-      })
-    );
-
 
     hardware.driverController.leftTrigger(0.1).whileTrue(
       edu.wpi.first.wpilibj2.command.Commands.startEnd(
@@ -326,54 +379,11 @@ public class Robot extends TimedRobot {
     );
 
 
-    
-
-    hardware.driverController.povRight().whileTrue(
-      edu.wpi.first.wpilibj2.command.Commands.startEnd(
-        () -> hood.runDutyCycle(0.3),
-        () -> hood.stopMotor()
-      )
+   hardware.driverController.x().whileTrue(
+      outpost.travelToOutpost()
     );
 
-      hardware.driverController.povLeft().whileTrue(
-      edu.wpi.first.wpilibj2.command.Commands.startEnd(
-        () -> hood.runDutyCycle(-0.3),
-        () -> hood.stopMotor()
-      )
-    );
-
-
-    hardware.driverController.povDown().whileTrue(
-        Commands.runOnce(() -> {
-         hood.setAngleDegrees(-60);
-        }
-      )
-    );
-
-        hardware.driverController.povUp().whileTrue(
-        Commands.runOnce(() -> {
-         hood.setAngleDegrees(0);
-        }
-      )
-    );
-/* 
-    // D-pad Down → deploy elevator + turn intake rollers on
-    hardware.driverController.povDown().onTrue(
-      Commands.runOnce(() -> {
-        intakePosition.deploy();
-        intakeRoller.intake();
-      })
-    );
-
-    // D-pad Up → retract elevator + turn intake rollers off
-    hardware.driverController.povUp().onTrue(
-      Commands.runOnce(() -> {
-        intakePosition.retract();
-        intakeRoller.stop();
-      })
-    );
-    */
-
+  
     swerve.setDefaultCommand(
         swerve
             .run(
@@ -386,39 +396,22 @@ public class Robot extends TimedRobot {
                   }
                 })
             .withName("DefaultSwerveCommand"));
-/* 
-    hardware.driverController.rightTrigger().whileTrue(
-      edu.wpi.first.wpilibj2.command.Commands.startEnd(
-        () -> {
-          intakePosition.requestDown();
-          intakeRoller.intake();
-          SmartDashboard.putBoolean("Driver/IntakeIsDown", true);
-        },
-        () -> {
-          intakePosition.requestUp();
-          intakeRoller.stop();
-          SmartDashboard.putBoolean("Driver/IntakeIsDown", false);
-        }
-      )
-    );
-*/
+
     hardware.driverController.rightTrigger(0.1).whileTrue(
       edu.wpi.first.wpilibj2.command.Commands.startEnd(
         () -> {
-          // On press: check X to decide shoot vs pass
           double robotX = localization.getPose().getX();
           boolean shooting = robotX >= 11.0;
-          SmartDashboard.putBoolean("Driver/RT_ShootMode", shooting);
+          rtShootMode = shooting;
+          if (ENABLE_DASHBOARD) SmartDashboard.putBoolean("Driver/RT_ShootMode", shooting);
 
           if (shooting) {
-            // --- SHOOT MODE (X >= 11) ---
             turretLookup.enable();
             headingLock.enableForAlliance();
             intakeRoller.intake();
             hopper.pulse();
-            SmartDashboard.putBoolean("Driver/ShootingActive", true);
+            if (ENABLE_DASHBOARD) SmartDashboard.putBoolean("Driver/ShootingActive", true);
           } else {
-            // --- PASS MODE (X < 11) ---
             savedRedTarget = headingLock.getRedTargetPoint();
             savedBlueTarget = headingLock.getBlueTargetPoint();
 
@@ -432,12 +425,11 @@ public class Robot extends TimedRobot {
             headingLock.setBlueTargetPoint(activePassTarget);
             headingLock.enableForAlliance();
             hopper.pulse();
-            SmartDashboard.putBoolean("Driver/PassingActive", true);
+            if (ENABLE_DASHBOARD) SmartDashboard.putBoolean("Driver/PassingActive", true);
           }
         },
         () -> {
-          // On release: clean up both modes
-          boolean wasShootMode = SmartDashboard.getBoolean("Driver/RT_ShootMode", true);
+          boolean wasShootMode = rtShootMode;
 
           if (wasShootMode) {
             turretLookup.disable();
@@ -447,7 +439,7 @@ public class Robot extends TimedRobot {
             indexer.stop();
             intakeRoller.stop();
             hopper.stop();
-            SmartDashboard.putBoolean("Driver/ShootingActive", false);
+            if (ENABLE_DASHBOARD) SmartDashboard.putBoolean("Driver/ShootingActive", false);
           } else {
             headingLock.setRedTargetPoint(savedRedTarget);
             headingLock.setBlueTargetPoint(savedBlueTarget);
@@ -457,15 +449,14 @@ public class Robot extends TimedRobot {
             indexer.stop();
             intakeRoller.stop();
             hopper.stop();
-            SmartDashboard.putBoolean("Driver/PassingActive", false);
+            if (ENABLE_DASHBOARD) SmartDashboard.putBoolean("Driver/PassingActive", false);
           }
         }
       ).alongWith(
         edu.wpi.first.wpilibj2.command.Commands.run(() -> {
-          boolean shootMode = SmartDashboard.getBoolean("Driver/RT_ShootMode", true);
+          boolean shootMode = rtShootMode;
 
           if (shootMode) {
-            // --- SHOOT periodic ---
             if (!turretLookup.hasCachedParameters()) return;
             double rpm = turretLookup.getCachedFlywheelRpm();
             double hoodRad = turretLookup.getCachedHoodAngleRad();
@@ -476,99 +467,23 @@ public class Robot extends TimedRobot {
               hopper.feed();
             }
           } else {
-            // --- PASS periodic ---
             double dist = localization.getPose().getTranslation().getDistance(activePassTarget);
             double rpm = LookupTable.getPassRpm(dist);
             flywheel.spinFlywheel(rpm);
             hood.setAngleDegrees(LookupTable.PASS_HOOD_ANGLE_DEG);
-            SmartDashboard.putNumber("Pass/Distance", dist);
-            SmartDashboard.putNumber("Pass/RPM", rpm);
-            if (flywheel.isAtGoal() && headingLock.isSettled()) {
-              indexer.feed();
-              hopper.feed();
+            if (ENABLE_DASHBOARD) {
+              SmartDashboard.putNumber("Pass/Distance", dist);
+              SmartDashboard.putNumber("Pass/RPM", rpm);
             }
-          }
-        })
-      )
-    );
-
-
-    hardware.driverController.rightBumper().whileTrue(
-      edu.wpi.first.wpilibj2.command.Commands.startEnd(
-        () -> {
-          // Save current shooting targets
-          savedRedTarget = headingLock.getRedTargetPoint();
-          savedBlueTarget = headingLock.getBlueTargetPoint();
-
-          // Pick closest pass target
-          Translation2d robotPos = localization.getPose().getTranslation();
-          double distRight = robotPos.getDistance(FieldPoints.PASS_TARGET_RIGHT);
-          double distLeft = robotPos.getDistance(FieldPoints.PASS_TARGET_LEFT);
-          activePassTarget = distRight < distLeft
-              ? FieldPoints.PASS_TARGET_RIGHT : FieldPoints.PASS_TARGET_LEFT;
-
-          // Aim at pass target
-          headingLock.setRedTargetPoint(activePassTarget);
-          headingLock.setBlueTargetPoint(activePassTarget);
-          headingLock.enableForAlliance();
-          hopper.pulse();
-          SmartDashboard.putBoolean("Driver/PassingActive", true);
-        },
-        () -> {
-          // Restore original shooting targets
-          headingLock.setRedTargetPoint(savedRedTarget);
-          headingLock.setBlueTargetPoint(savedBlueTarget);
-          headingLock.disableLock();
-          flywheel.stop();
-          hood.setAngleDegrees(0);
-          indexer.stop();
-          intakeRoller.stop();
-          hopper.stop();
-          SmartDashboard.putBoolean("Driver/PassingActive", false);
-        }
-      ).alongWith(
-        edu.wpi.first.wpilibj2.command.Commands.run(() -> {
-          // Distance-based pass interp
-          double dist = localization.getPose().getTranslation().getDistance(activePassTarget);
-          double rpm = LookupTable.getPassRpm(dist);
-          flywheel.spinFlywheel(rpm);
-          hood.setAngleDegrees(LookupTable.PASS_HOOD_ANGLE_DEG);
-          SmartDashboard.putNumber("Pass/Distance", dist);
-          SmartDashboard.putNumber("Pass/RPM", rpm);
-          if (flywheel.isAtGoal() && headingLock.isSettled()) {
             indexer.feed();
             hopper.feed();
           }
         })
       )
     );
-/* 
-    hardware.driverController.y().whileTrue(
-      edu.wpi.first.wpilibj2.command.Commands.startEnd(
-        () -> {
-          turretLookup.enable();
-          SmartDashboard.putBoolean("Driver/ShootingActive", true);
-        },
-        () -> {
-          turretLookup.disable();
-          flywheelSM.requestOff();
-          hoodSM.requestOff();
-          indexer.stop();
-          hopper.stop();
-          SmartDashboard.putBoolean("Driver/ShootingActive", false);
-        }
-      ).alongWith(
-        edu.wpi.first.wpilibj2.command.Commands.run(() -> {
-          if (!turretLookup.cachedParametersValid()) return;
-          double rpm = turretLookup.getCachedFlywheelRpm();
-          double hoodRad = turretLookup.getCachedHoodAngleRad();
-          flywheelSM.requestRpm(rpm);
-          hoodSM.requestDegrees(Math.toDegrees(hoodRad));
-          indexer.feed();
-          hopper.feed();
-        })
-      )
-    );  */
+
+
+  
   }
     
 }

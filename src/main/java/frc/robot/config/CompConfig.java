@@ -10,7 +10,7 @@ class CompConfig {
   public static final RobotConfig competitionBot =
                   new RobotConfig(
                       "comp",
-                      new SwerveConfig(new PhoenixPIDController(3.2, 0, 0.0), true, true, true),
+                      new SwerveConfig(new PhoenixPIDController(3.7, 0, 0.0), true, true, true),
                       new VisionConfig(
                           0.005,
                           0.8,

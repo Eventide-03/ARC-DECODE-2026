@@ -25,12 +25,13 @@ public final class FieldPoints {
  // private static Pose2d BC2 = new Pose2d(2.0, 1.0, Rotation2d.kZero);
 
   // points for heading lock
-  private static Translation2d HEADINGLOCK_BLUE_POINT = new Translation2d(4.622, 4.035);
-  private static Translation2d HEADINGLOCK_RED_POINT = new Translation2d(12, 4);
+  private static Translation2d HEADINGLOCK_BLUE_POINT = new Translation2d(4.623818397521973, 4.034599781036377);
+  private static Translation2d HEADINGLOCK_RED_POINT = new Translation2d(11.932568550109863, 4);
   
   // outpost poses
   private static Pose2d OUTPOST_BLUE= new Pose2d(0.766, 0.433, Rotation2d.fromDegrees(0));
   private static Pose2d OUTPOST_RED = new Pose2d(16.25, 7.291, Rotation2d.fromDegrees(180.0));
+
 
   // Trench zones (X and Y bounds)
   // Trench X bounds: only lock when robot X is between 10.8 and 13.0
@@ -45,7 +46,7 @@ public final class FieldPoints {
 
   // Pass target points
   public static final Translation2d PASS_TARGET_RIGHT = new Translation2d(14.0, 7.0);
-  public static final Translation2d PASS_TARGET_LEFT  = new Translation2d(14.0, 2.4);
+  public static final Translation2d PASS_TARGET_LEFT  = new Translation2d(14.0, 3.5);
 
   // Y approach zones — ramp assist in as driver approaches trench Y threshold
   // Right trench: approach starts at 5.5, full lock at 6.8

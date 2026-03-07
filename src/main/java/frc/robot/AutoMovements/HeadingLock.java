@@ -35,8 +35,8 @@ public class HeadingLock extends StateMachine<HeadingLock.HeadingLockState> {
   private static final double MT1_MIN_CORRECTION_DEG = 1.0;  // ignore if diff < this (not worth correcting)
   private static final double MT1_MIN_TAG_AREA = 0;       // reject if avg tag area too small (too far away)
   private boolean mt1HeadingCorrectionEnabled = true;
-  private boolean mt1RightHeadingCorrectionEnabled = true;
-  private static final double HEADING_TOLERANCE_DEG = 6;
+  private boolean mt1RightHeadingCorrectionEnabled = false;
+  private static final double HEADING_TOLERANCE_DEG = 4.5;
   private double lastTargetAngleDeg = 0.0;
   private static final double HEADING_SETTLE_TIME_S = 0;
   private double headingOnTargetStartTime = 0;
@@ -44,7 +44,7 @@ public class HeadingLock extends StateMachine<HeadingLock.HeadingLockState> {
  
   private static final double CLOSE_DISTANCE_M = 1.0;
   private static final double FAR_DISTANCE_M = 5;
-  private static final double MAX_CORRECTION_DEG = 8;
+  private static final double MAX_CORRECTION_DEG = 6;
 
   public enum HeadingLockState {
     DISABLED,

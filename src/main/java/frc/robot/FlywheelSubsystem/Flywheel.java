@@ -19,14 +19,14 @@ public class Flywheel {
 
 
 	public static final double kV = 0.325;
-	public static final double kP = 3.8;
+	public static final double kP = 3.6;
 
 	
 		public static final double SUPPLY_LIMIT = 60.0;
 	public static final double STATOR_LIMIT = 80.0;
 	public static final double TORQUE_CURRENT_LIMIT = 80.0;
 
-	public static final double RPM_TOLERANCE = 200;
+	public static final double RPM_TOLERANCE = 400;
 	public static final double AT_GOAL_DEBOUNCE_TIME = 0.06;
 
 	// ── State ────────────────────────────────────────────────────

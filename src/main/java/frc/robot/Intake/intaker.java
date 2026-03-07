@@ -16,7 +16,7 @@ import frc.robot.util.state_machines.StateMachine;
 public class intaker extends StateMachine<intaker.State> {
 	public enum State { OFF, INTAKE, FEED, REVERSE }
 
-	private static final double INTAKE_POWER = 6.5;
+	private static final double INTAKE_POWER = 8.5;
 	private static final double FEED_POWER = 6.5;
 	private static final double REVERSE_POWER = -4;
 
