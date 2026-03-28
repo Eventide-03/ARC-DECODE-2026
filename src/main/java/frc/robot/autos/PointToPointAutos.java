@@ -39,6 +39,9 @@ import frc.robot.swerve.SwerveSubsystem;
  * Add .runOnce() / .doWhileDriving() around it for actions.
  */
 public class PointToPointAutos {
+  private static final double SHOOT_FEED_DELAY_SEC = 0.3;
+  private static final double SHOOT_INTAKE_DUTY = 0.4;
+
   private final SwerveSubsystem swerve;
   private final LocalizationSubsystem localization;
   private final Flywheel flywheel;
@@ -85,7 +88,7 @@ public class PointToPointAutos {
     chooser.addOption("Red Right", RedRight());
     chooser.addOption("Red Left", RedLeft());
 
-    SmartDashboard.putData("PointToPoint/Auto Chooser", chooser);
+    SmartDashboard.putData("Auto Chooser", chooser);
   }
 
   /** Get the currently selected auto command from the dashboard chooser. */
@@ -115,7 +118,9 @@ public class PointToPointAutos {
 
   private Command startFeeding() {
     return Commands.waitUntil(() -> flywheel.isAtGoal() && headingLock.isSettled())
+        .andThen(Commands.waitSeconds(SHOOT_FEED_DELAY_SEC))
         .andThen(Commands.runOnce(() -> {
+          intakeRoller.setDutyPercent(SHOOT_INTAKE_DUTY);
           indexer.feed();
           hopper.feed();
         }))
@@ -124,6 +129,7 @@ public class PointToPointAutos {
 
   private Command stopFeeding() {
     return Commands.runOnce(() -> {
+      intakeRoller.stop();
       indexer.stop();
       hopper.stop();
     });

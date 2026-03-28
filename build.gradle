@@ -15,11 +15,8 @@ def ROBOT_MAIN_CLASS = "frc.robot.Main"
 deploy {
     targets {
         roborio(getTargetTypeClass('RoboRIO')) {
-            // Team number is loaded either from the .wpilib/wpilib_preferences.json
-            // or from command line. If not found an exception will be thrown.
-            // You can use getTeamOrDefault(team) instead of getTeamNumber if you
-            // want to store a team number in this file.
-            team = project.frc.getTeamNumber()
+            // Default to team 4079 unless overridden by .wpilib prefs or -PteamNumber.
+            team = project.frc.getTeamOrDefault(4079)
             debug = project.frc.getDebugOrDefault(false)
 
             artifacts {
@@ -104,4 +101,17 @@ wpi.java.configureTestTasks(test)
 // Configure string concat to always inline compile
 tasks.withType(JavaCompile) {
     options.compilerArgs.add '-XDstringConcat=inline'
+}
+
+// Convenience tasks for IDE run configurations.
+tasks.register("buildRobot") {
+    group = "FRC"
+    description = "Builds the robot code jar"
+    dependsOn("build")
+}
+
+tasks.register("deployRobot") {
+    group = "FRC"
+    description = "Builds and deploys robot code to team 4079 RoboRIO over current network"
+    dependsOn("deploy")
 }

@@ -14,11 +14,10 @@ public class Hardware {
   public final CommandXboxController driverController = new CommandXboxController(0);
   public final CommandXboxController testController   = new CommandXboxController(1); // testing only
 
-  // Requested CAN IDs
-  public final TalonFX flywheelA1        = new TalonFX(4, RIO);   // shooter bottom
-  public final TalonFX flywheelA2        = new TalonFX(6, RIO);   // shooter top spin
+  public final TalonFX flywheelA1        = new TalonFX(4, RIO);  // shooter bottom
+  public final TalonFX flywheelA2        = new TalonFX(6, RIO);  // shooter top spin
   public final TalonFX hopperMotor       = new TalonFX(3, RIO);
-  public final TalonFX hoodMotor         = new TalonFX(5, RIO);   // shooter hood
+  public final TalonFX hoodMotor         = new TalonFX(5, RIO);  // shooter hood
   public final TalonFX indexerMotor      = new TalonFX(7, RIO);
   public final TalonFX intakePivotMotor  = new TalonFX(2, RIO);
   public final TalonFX intakeRollerMotor = new TalonFX(16, RIO);
