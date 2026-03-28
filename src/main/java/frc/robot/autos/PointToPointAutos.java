@@ -85,7 +85,7 @@ public class PointToPointAutos {
     chooser.addOption("Red Right", RedRight());
     chooser.addOption("Red Left", RedLeft());
 
-    SmartDashboard.putData("Auto Chooser", chooser);
+    SmartDashboard.putData("PointToPoint/Auto Chooser", chooser);
   }
 
   /** Get the currently selected auto command from the dashboard chooser. */

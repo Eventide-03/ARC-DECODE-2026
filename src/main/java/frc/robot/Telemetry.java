@@ -55,6 +55,13 @@ public class Telemetry {
     private final NetworkTable table = inst.getTable("Pose");
     private final DoubleArrayPublisher fieldPub = table.getDoubleArrayTopic("robotPose").publish();
     private final StringPublisher fieldTypePub = table.getStringTopic(".type").publish();
+    private final StructPublisher<Pose2d> advantageScopePose =
+            inst.getTable("Localization").getStructTopic("EstimatedPose", Pose2d.struct).publish();
+    // Compatibility topics for tools/layouts that read these keys directly.
+    private final DoubleArrayPublisher localizationRobotPosePub =
+            inst.getTable("Localization").getDoubleArrayTopic("robot_pose").publish();
+    private final DoubleArrayPublisher limelightBotposeBluePub =
+            inst.getTable("limelight").getDoubleArrayTopic("botpose_blue").publish();
 
     /* Mechanisms to represent the swerve module states */
     private final Mechanism2d[] m_moduleMechanisms = new Mechanism2d[] {
@@ -83,6 +90,8 @@ public class Telemetry {
     };
 
     private final double[] m_poseArray = new double[3];
+    private final double[] m_robotPoseRadArray = new double[3];
+    private final double[] m_botposeBlueArray = new double[6];
 
     /** Accept the swerve drive state and telemeterize it to SmartDashboard and SignalLogger. */
     public void telemeterize(SwerveDriveState state) {
@@ -110,6 +119,22 @@ public class Telemetry {
         m_poseArray[1] = state.Pose.getY();
         m_poseArray[2] = state.Pose.getRotation().getDegrees();
         fieldPub.set(m_poseArray);
+        advantageScopePose.set(state.Pose);
+
+        // Localization/robot_pose = [x, y, thetaRadians]
+        m_robotPoseRadArray[0] = state.Pose.getX();
+        m_robotPoseRadArray[1] = state.Pose.getY();
+        m_robotPoseRadArray[2] = state.Pose.getRotation().getRadians();
+        localizationRobotPosePub.set(m_robotPoseRadArray);
+
+        // limelight/botpose_blue = [x, y, z, roll, pitch, yawDegrees]
+        m_botposeBlueArray[0] = state.Pose.getX();
+        m_botposeBlueArray[1] = state.Pose.getY();
+        m_botposeBlueArray[2] = 0.0;
+        m_botposeBlueArray[3] = 0.0;
+        m_botposeBlueArray[4] = 0.0;
+        m_botposeBlueArray[5] = state.Pose.getRotation().getDegrees();
+        limelightBotposeBluePub.set(m_botposeBlueArray);
 
         /* Telemeterize each module state to a Mechanism2d */
         for (int i = 0; i < 4; ++i) {

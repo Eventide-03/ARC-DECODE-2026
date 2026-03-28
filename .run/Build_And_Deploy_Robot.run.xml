@@ -4,7 +4,7 @@
       <option name="executionName" />
       <option name="externalProjectPath" value="$PROJECT_DIR$" />
       <option name="externalSystemIdString" value="GRADLE" />
-      <option name="scriptParameters" value="-PtargetAddress=10.101.83.2 -Djava.net.preferIPv4Stack=true" />
+      <option name="scriptParameters" value="-PtargetAddress=10.40.79.2 -Djava.net.preferIPv4Stack=true" />
       <option name="taskDescriptions">
         <list />
       </option>
